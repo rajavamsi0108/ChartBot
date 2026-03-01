@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AIChat | Intelligent Interface</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/4.3.0/marked.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
+        
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: #020617;
+            color: #f8fafc;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(12px);
+            border-right: 1px solid rgba(255, 255, 255, 0.05);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .sidebar.collapsed {
+            transform: translateX(-100%);
+            width: 0;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .chat-area {
+            background-color: transparent;
+            position: relative;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .message-user-bubble {
+            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+            box-shadow: 0 4px 15px rgba(79, 70, 229, 0.2);
+        }
+
+        .message-bot-bubble {
+            background: rgba(30, 41, 59, 0.3);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .scrollbar-hide::-webkit-scrollbar {
+            display: none;
+        }
+
+        /* Markdown Styling */
+        .markdown-content p { margin-bottom: 0.75rem; }
+        .markdown-content p:last-child { margin-bottom: 0; }
+        .markdown-content code { 
+            background: rgba(0, 0, 0, 0.3); 
+            padding: 0.2rem 0.4rem; 
+            border-radius: 0.25rem; 
+            font-family: monospace;
+            font-size: 0.9em;
+        }
+        .markdown-content pre {
+            background: #0f172a;
+            padding: 1rem;
+            border-radius: 0.75rem;
+            overflow-x: auto;
+            margin: 0.75rem 0;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .typing-dot {
+            width: 6px;
+            height: 6px;
+            background: #818cf8;
+            border-radius: 50%;
+            animation: bounce 1.4s infinite ease-in-out;
+        }
+
+        .typing-dot:nth-child(1) { animation-delay: -0.32s; }
+        .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+
+        @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1.0); }
+        }
+
+        .glow {
+            position: absolute;
+            width: 500px;
+            height: 500px;
+            background: radial-gradient(circle, rgba(79, 70, 229, 0.1) 0%, rgba(0, 0, 0, 0) 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .voice-active {
+            animation: pulse-red 1.5s infinite;
+            color: #ef4444 !important;
+        }
+
+        @keyframes pulse-red {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+            70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+
+        #chat-form {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.5);
+            outline: none;
+        }
+
+        #chat-form:focus-within {
+            border-color: rgba(79, 70, 229, 0.4);
+            background: rgba(15, 23, 42, 0.8);
+        }
+
+        textarea:focus {
+            outline: none !important;
+            box-shadow: none !important;
+        }
+
+        .history-item {
+            transition: all 0.2s ease;
+        }
+        .history-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+        .history-item.active {
+            background: rgba(79, 70, 229, 0.15);
+            border-left: 3px solid #6366f1;
+        }
+    </style>
+</head>
+<body class="h-screen flex w-full relative">
+    
+    <div class="glow top-[-10%] right-[-10%]"></div>
+    <div class="glow bottom-[-10%] left-[-10%]"></div>
+
+    <!-- Sidebar -->
+    <aside id="sidebar" class="sidebar w-72 h-full flex flex-col shrink-0 z-30 fixed md:relative">
+        <div class="p-6">
+            <div class="flex items-center justify-between mb-8">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20">
+                        <i class="fas fa-bolt"></i>
+                    </div>
+                    <span class="font-bold text-xl tracking-tight text-indigo-500">AIChat</span>
+                </div>
+                <button onclick="toggleSidebar()" class="p-2 text-slate-500 hover:text-white transition-colors">
+                    <i class="fas fa-outdent text-lg"></i>
+                </button>
+            </div>
+            
+            <button onclick="createNewChat()" class="w-full py-3 px-4 rounded-2xl border-2 border-dashed border-slate-700 hover:border-indigo-500/50 hover:bg-indigo-500/5 flex items-center justify-center gap-2 transition-all group">
+                <i class="fas fa-plus text-xs text-slate-500 group-hover:text-indigo-400"></i>
+                <span class="text-sm font-medium text-slate-400 group-hover:text-indigo-400">New Chat</span>
+            </button>
+        </div>
+
+        <div id="history-container" class="flex-1 overflow-y-auto px-4 space-y-1 scrollbar-hide">
+            <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-3 mb-2 mt-4">Recent Sessions</p>
+            <div id="history-list" class="space-y-1">
+                <!-- History items injected here -->
+            </div>
+        </div>
+
+        <div class="p-6 mt-auto border-t border-white/5">
+            <div class="flex items-center gap-3 p-3 rounded-2xl bg-white/5 border border-white/5">
+                <div class="w-10 h-10 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-xs font-bold ring-2 ring-white/10">JD</div>
+                <div class="flex flex-col overflow-hidden">
+                    <span class="text-sm font-bold truncate">User Account</span>
+                    <span class="text-[10px] text-indigo-400 font-bold uppercase tracking-wider">Pro Member</span>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <main class="flex-1 flex flex-col chat-area h-full relative z-10">
+        <header class="flex items-center p-4 md:p-6 h-20">
+            <button id="open-sidebar-btn" onclick="toggleSidebar()" class="p-3 text-slate-400 hover:text-white transition-all mr-2">
+                <i class="fas fa-indent text-lg"></i>
+            </button>
+            <div class="flex items-center gap-2">
+                <span class="text-sm font-bold text-slate-400">AIChat 2.5</span>
+                <span id="audio-status" class="hidden text-[9px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 font-bold border border-indigo-500/20 animate-pulse">SPEAKING</span>
+            </div>
+        </header>
+
+        <div id="chat-viewport" class="flex-1 overflow-y-auto px-4 md:px-0 scrollbar-hide">
+            <div id="chat-messages" class="max-w-3xl mx-auto py-10 space-y-10">
+                <div id="welcome-screen" class="flex flex-col items-center justify-center h-[50vh] text-center space-y-6">
+                    <div class="w-20 h-20 rounded-3xl bg-indigo-600/10 flex items-center justify-center mb-2 border border-indigo-500/20 shadow-2xl shadow-indigo-500/10">
+                        <i class="fas fa-microphone-alt text-3xl text-indigo-500"></i>
+                    </div>
+                    <div class="space-y-2">
+                        <h2 class="text-3xl font-bold tracking-tight">How can I help you today?</h2>
+                        <p class="text-slate-400 max-w-sm mx-auto">Tap the microphone to start a voice conversation or type below.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="typing-indicator" class="hidden max-w-3xl mx-auto w-full px-4 mb-6">
+            <div class="flex gap-5">
+                <div class="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center shrink-0 shadow-lg mt-1">
+                    <i class="fas fa-robot text-white text-sm"></i>
+                </div>
+                <div class="flex gap-1.5 items-center bg-slate-800/40 backdrop-blur-md px-5 py-4 rounded-2xl rounded-tl-none border border-white/5">
+                    <div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="w-full max-w-4xl mx-auto p-6 pb-10">
+            <form id="chat-form" class="relative backdrop-blur-3xl rounded-[28px] transition-all px-4 py-2">
+                <div class="flex items-end gap-2">
+                    <button type="button" id="voice-btn" class="p-3 text-slate-500 hover:text-indigo-400 transition-colors rounded-full">
+                        <i class="fas fa-microphone text-lg"></i>
+                    </button>
+                    <textarea 
+                        id="user-input"
+                        rows="1"
+                        placeholder="Message AIChat..."
+                        class="flex-1 bg-transparent border-none focus:ring-0 py-4 text-base resize-none max-h-48 scrollbar-hide placeholder-slate-500"
+                    ></textarea>
+                    <button 
+                        type="submit"
+                        id="send-btn"
+                        class="p-3 bg-indigo-600 text-white rounded-2xl w-12 h-12 flex items-center justify-center mb-1 disabled:opacity-10 transition-all shadow-lg shadow-indigo-500/20"
+                        disabled
+                    >
+                        <i class="fas fa-arrow-up"></i>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </main>
+
+    <script>
+        const chatForm = document.getElementById('chat-form');
+        const userInput = document.getElementById('user-input');
+        const chatMessages = document.getElementById('chat-messages');
+        const typingIndicator = document.getElementById('typing-indicator');
+        const historyList = document.getElementById('history-list');
+        const sendBtn = document.getElementById('send-btn');
+        const voiceBtn = document.getElementById('voice-btn');
+        const sidebar = document.getElementById('sidebar');
+        const openSidebarBtn = document.getElementById('open-sidebar-btn');
+        const audioStatus = document.getElementById('audio-status');
+
+        const apiKey = "";
+        let currentChatId = null;
+        let chats = JSON.parse(localStorage.getItem('aichat_history') || '[]');
+
+        marked.setOptions({ breaks: true, gfm: true });
+
+        // --- Voice Recognition ---
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        let recognition;
+        if (SpeechRecognition) {
+            recognition = new SpeechRecognition();
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.lang = 'en-US';
+            recognition.onstart = () => voiceBtn.classList.add('voice-active');
+            recognition.onend = () => voiceBtn.classList.remove('voice-active');
+            recognition.onresult = (event) => {
+                const transcript = event.results[0][0].transcript;
+                userInput.value = transcript;
+                userInput.dispatchEvent(new Event('input'));
+                handleChatSubmit();
+            };
+        }
+
+        voiceBtn.onclick = () => recognition && recognition.start();
+
+        // --- TTS and PCM/WAV Handling ---
+        function pcmToWav(pcmData, sampleRate) {
+            const buffer = new ArrayBuffer(44 + pcmData.length * 2);
+            const view = new DataView(buffer);
+            const writeString = (offset, string) => {
+                for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i));
+            };
+            writeString(0, 'RIFF');
+            view.setUint32(4, 32 + pcmData.length * 2, true);
+            writeString(8, 'WAVE');
+            writeString(12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true);
+            view.setUint16(22, 1, true);
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, sampleRate * 2, true);
+            view.setUint16(32, 2, true);
+            view.setUint16(34, 16, true);
+            writeString(36, 'data');
+            view.setUint32(40, pcmData.length * 2, true);
+            let offset = 44;
+            for (let i = 0; i < pcmData.length; i++, offset += 2) view.setInt16(offset, pcmData[i], true);
+            return new Blob([buffer], { type: 'audio/wav' });
+        }
+
+        async function speakText(text) {
+            try {
+                audioStatus.classList.remove('hidden');
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: `Say naturally: ${text.substring(0, 500)}` }] }],
+                        generationConfig: { 
+                            responseModalities: ["AUDIO"],
+                            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } }
+                        }
+                    })
+                });
+                const result = await response.json();
+                const audioBase64 = result.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+                if (!audioBase64) throw new Error("No audio data");
+                const binaryString = atob(audioBase64);
+                const pcmData = new Int16Array(binaryString.length / 2);
+                for (let i = 0; i < pcmData.length; i++) {
+                    pcmData[i] = (binaryString.charCodeAt(i * 2 + 1) << 8) | binaryString.charCodeAt(i * 2);
+                }
+                const wavBlob = pcmToWav(pcmData, 24000);
+                const audio = new Audio(URL.createObjectURL(wavBlob));
+                audio.onended = () => audioStatus.classList.add('hidden');
+                audio.play();
+            } catch (err) {
+                audioStatus.classList.add('hidden');
+            }
+        }
+
+        // --- Sidebar & Persistence Logic ---
+        function toggleSidebar() {
+            sidebar.classList.toggle('collapsed');
+            updateOpenSidebarBtnVisibility();
+        }
+
+        function updateOpenSidebarBtnVisibility() {
+            if (sidebar.classList.contains('collapsed')) {
+                openSidebarBtn.style.opacity = '1';
+                openSidebarBtn.style.pointerEvents = 'auto';
+            } else {
+                if (window.innerWidth >= 768) {
+                    openSidebarBtn.style.opacity = '0';
+                    openSidebarBtn.style.pointerEvents = 'none';
+                }
+            }
+        }
+
+        function saveToLocal() {
+            localStorage.setItem('aichat_history', JSON.stringify(chats));
+            renderHistoryList();
+        }
+
+        function createNewChat() {
+            currentChatId = Date.now().toString();
+            chatMessages.innerHTML = `
+                <div id="welcome-screen" class="flex flex-col items-center justify-center h-[50vh] text-center space-y-6">
+                    <div class="w-20 h-20 rounded-3xl bg-indigo-600/10 flex items-center justify-center mb-2 border border-indigo-500/20 shadow-2xl shadow-indigo-500/10">
+                        <i class="fas fa-microphone-alt text-3xl text-indigo-500"></i>
+                    </div>
+                    <div class="space-y-2">
+                        <h2 class="text-3xl font-bold tracking-tight">How can I help you today?</h2>
+                        <p class="text-slate-400 max-w-sm mx-auto">New session started.</p>
+                    </div>
+                </div>
+            `;
+            renderHistoryList();
+        }
+
+        function loadChat(id) {
+            const chat = chats.find(c => c.id === id);
+            if (!chat) return;
+            currentChatId = id;
+            chatMessages.innerHTML = '';
+            chat.messages.forEach(msg => appendToUI(msg.text, msg.sender));
+            renderHistoryList();
+            if (window.innerWidth < 768) toggleSidebar();
+        }
+
+        function renderHistoryList() {
+            historyList.innerHTML = '';
+            chats.slice().reverse().forEach(chat => {
+                const item = document.createElement('div');
+                item.className = `history-item flex items-center gap-3 p-3 rounded-xl cursor-pointer text-sm font-medium text-slate-400 ${currentChatId === chat.id ? 'active text-indigo-400' : ''}`;
+                item.onclick = () => loadChat(chat.id);
+                item.innerHTML = `
+                    <i class="fas fa-comment-alt text-xs opacity-50"></i>
+                    <span class="truncate flex-1">${chat.title}</span>
+                    <button onclick="event.stopPropagation(); deleteChat('${chat.id}')" class="opacity-0 group-hover:opacity-100 p-1 hover:text-red-400">
+                        <i class="fas fa-times"></i>
+                    </button>
+                `;
+                item.classList.add('group');
+                historyList.appendChild(item);
+            });
+        }
+
+        function deleteChat(id) {
+            chats = chats.filter(c => c.id !== id);
+            if (currentChatId === id) createNewChat();
+            saveToLocal();
+        }
+
+        // --- Chat Interaction ---
+        userInput.addEventListener('input', () => {
+            userInput.style.height = 'auto';
+            userInput.style.height = userInput.scrollHeight + 'px';
+            sendBtn.disabled = !userInput.value.trim();
+        });
+
+        userInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleChatSubmit();
+            }
+        });
+
+        function appendToUI(text, sender) {
+            const welcome = document.getElementById('welcome-screen');
+            if (welcome) welcome.remove();
+            
+            const isUser = sender === 'user';
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `flex gap-5 group animate-in slide-in-from-bottom-2 duration-300 ${isUser ? 'justify-end' : ''}`;
+            messageDiv.innerHTML = `
+                ${!isUser ? `<div class="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center shrink-0 shadow-lg mt-1"><i class="fas fa-robot text-white text-sm"></i></div>` : ''}
+                <div class="flex flex-col gap-2 max-w-[85%] ${isUser ? 'items-end' : ''}">
+                    <div class="${isUser ? 'message-user-bubble text-white px-6 py-4 rounded-[26px] rounded-tr-none' : 'message-bot-bubble px-6 py-4 rounded-[26px] rounded-tl-none'} leading-relaxed markdown-content">
+                        ${isUser ? text : marked.parse(text)}
+                    </div>
+                </div>
+            `;
+            chatMessages.appendChild(messageDiv);
+            document.getElementById('chat-viewport').scrollTop = document.getElementById('chat-viewport').scrollHeight;
+        }
+
+        async function handleChatSubmit() {
+            const message = userInput.value.trim();
+            if (!message) return;
+            
+            // Auto-collapse sidebar on mobile when starting
+            if (window.innerWidth < 768 && !sidebar.classList.contains('collapsed')) toggleSidebar();
+
+            userInput.value = '';
+            userInput.style.height = 'auto';
+            sendBtn.disabled = true;
+
+            if (!currentChatId) currentChatId = Date.now().toString();
+
+            // Store message
+            let activeChat = chats.find(c => c.id === currentChatId);
+            if (!activeChat) {
+                activeChat = { id: currentChatId, title: message.substring(0, 30) + '...', messages: [] };
+                chats.push(activeChat);
+            }
+            activeChat.messages.push({ sender: 'user', text: message });
+            
+            appendToUI(message, 'user');
+            typingIndicator.classList.remove('hidden');
+
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message })
+                });
+                const data = await response.json();
+                
+                activeChat.messages.push({ sender: 'bot', text: data.reply });
+                saveToLocal();
+                
+                appendToUI(data.reply, 'bot');
+                speakText(data.reply);
+            } catch (err) {
+                appendToUI("Backend connection lost.", 'bot');
+            } finally {
+                typingIndicator.classList.add('hidden');
+            }
+        }
+
+        chatForm.onsubmit = (e) => {
+            e.preventDefault();
+            handleChatSubmit();
+        };
+
+        // Initialize
+        if (window.innerWidth < 768) sidebar.classList.add('collapsed');
+        updateOpenSidebarBtnVisibility();
+        renderHistoryList();
+    </script>
+</body>
+</html>
